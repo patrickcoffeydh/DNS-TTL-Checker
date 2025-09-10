@@ -43,7 +43,7 @@ def domainTTL(domain, authoritativeDNS, resolver, type, verbose=False) -> int:
             print(e)
     return 0
 
-def checkDomain(domain, recordType, warningsOnly, maxTTL, verbose):
+def checkDomain(domain, recordType, warningsOnly, maxTTL, excpectedTTL, verbose):
     sem.acquire()
     retry = True
     attemptCount = 0
@@ -63,17 +63,18 @@ def checkDomain(domain, recordType, warningsOnly, maxTTL, verbose):
                         if verbose:
                             print("There is no DNS entry for {} at {}.".format(domain, hostname))
                     else:
-                        if maxTTL == 0:
+                        if maxTTL == 0 and excpectedTTL == 0:
                             print("TTL for the {} DNS entry at {} is {}".format(domain, hostname, ttl))
                         else:
                             if ttl == 0:
                                 print("⚠️ Warning: TTL for {} at {} is unknown".format(domain, hostname))
-                            elif ttl > maxTTL:
+                            elif ttl > maxTTL and maxTTL > 0:
                                 print("⚠️ Warning: TTL for {} at {} is {} instead of {}".format(domain, hostname, ttl, maxTTL))
-                            else:
+                            elif ttl == expectedTTL:
                                 if warningsOnly == False:
-                                    print("TTL for the {} DNS entry at {} is {}. Maximum TTL is {}.".format(domain, hostname, ttl, maxTTL))
-            retry = False
+                                    print("TTL for {} at {} is {}".format(domain, hostname, ttl))
+                            elif ttl != excpectedTTL and excpectedTTL != 0:
+                                print("⚠️ Warning: TTL for {} at {} is {} instead of {}".format(domain, hostname, ttl, expectedTTL))
         except Exception as e:
             time.sleep(2)
             if verbose:
@@ -107,6 +108,10 @@ maxTTL = 0
 if "maxttl" in a.keys():
     maxTTL = int(a["maxttl"])
 
+expectedTTL = 0
+if "ttl" in a.keys():
+    expectedTTL = int(a["ttl"])
+
 warningsOnly = False
 if "warn" in a.keys() or "w" in a.keys():
     warningsOnly = True
@@ -119,7 +124,7 @@ threadList = []
 for domain in listofDomains:
     if len(listofDomains) < 10:
         print("Cheking {}".format(domain))
-    t = threading.Thread(target=checkDomain, args=(domain,recordType,warningsOnly,maxTTL,verbose,))
+    t = threading.Thread(target=checkDomain, args=(domain,recordType,warningsOnly,maxTTL,expectedTTL,verbose,))
     t.start()
     threadList.append(t)
     time.sleep(2)
