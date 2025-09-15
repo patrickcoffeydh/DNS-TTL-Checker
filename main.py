@@ -8,7 +8,7 @@ class DNSAnswer:
     raw = ""
     server = ""
     ttl = -1
-    recordeType = ""
+    recordType = ""
     name = ""
     value = ""
 
@@ -41,14 +41,14 @@ def domainTTL(domain, resolver, type, verbose=False) -> DNSAnswer:
     defaultR = DNSAnswer()
     defaultR.name = domain
     defaultR.raw = "unknown error"
-    defaultR.recordeType = type
+    defaultR.recordType = type
     for a in answer.response.answer:
         try:
             resultList = str(a).split()
             result = DNSAnswer()
             result.name = str(resultList[0])[:-1]
             result.ttl = int(resultList[1])
-            result.recordeType = str(resultList[3])
+            result.recordType = str(resultList[3])
             result.raw = str(a)
             return result
         except:
