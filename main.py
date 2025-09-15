@@ -4,7 +4,13 @@ import time
 import threading
 from lib import common
 
-sem = threading.Semaphore(40)
+class DNSAnswer:
+    raw = ""
+    server = ""
+    ttl = -1
+    recordeType = ""
+    name = ""
+    value = ""
 
 def authoritativeServers(domain, resolver) -> list:
     authoritativeServerList = []
@@ -30,23 +36,32 @@ def authoritativeServerListIP(domains, resolver) -> dict:
             ips[domain] = authoritativeDNSIPList
     return ips
 
-def domainTTL(domain, authoritativeDNS, resolver, type, verbose=False) -> int:
-    try:
-        answer = resolver.resolve(domain, type)
-        for a in answer.response.answer:
-            return int(a.ttl)
-    except dns.resolver.NXDOMAIN as e:
-        return -1
-    except Exception as e:
-        if verbose:
-            print("Error getting TTL for a {} from {} at {}".format(type, domain, authoritativeDNS))
-            print(e)
-    return 0
+def domainTTL(domain, resolver, type, verbose=False) -> DNSAnswer:
+    answer = resolver.resolve(domain, type, )
+    defaultR = DNSAnswer()
+    defaultR.name = domain
+    defaultR.raw = "unknown error"
+    defaultR.recordeType = type
+    for a in answer.response.answer:
+        try:
+            resultList = str(a).split()
+            result = DNSAnswer()
+            result.name = str(resultList[0])[:-1]
+            result.ttl = int(resultList[1])
+            result.recordeType = str(resultList[3])
+            result.raw = str(a)
+            return result
+        except:
+            result = DNSAnswer()
+            result.name = domain
+            result.raw = str(a)
+            return result
+    return defaultR
 
-def checkDomain(domain, recordType, warningsOnly, maxTTL, excpectedTTL, verbose):
-    sem.acquire()
+def checkDomain(domain, recordType, warningsOnly, maxTTL, excpectedTTL, verbose) -> list:
     retry = True
     attemptCount = 0
+    results = []
     while retry:
         attemptCount = attemptCount + 1
         try:
@@ -58,23 +73,24 @@ def checkDomain(domain, recordType, warningsOnly, maxTTL, excpectedTTL, verbose)
                 ips = authoritativeDNSIPs[hostname]
                 for ip in ips:
                     customResolver.nameservers = [ip]
-                    ttl = domainTTL(domain=domain, authoritativeDNS=ip, resolver=customResolver, type=recordType)
-                    if ttl == -1:
-                        if verbose:
-                            print("There is no DNS entry for {} at {}.".format(domain, hostname))
+                    r = domainTTL(domain=domain, resolver=customResolver, type=recordType)
+                    r.server = hostname
+                    results.append(r)
+                    if r.ttl == -1:
+                        print("There is no DNS entry for {} at {}.\n{}".format(domain, hostname, r.raw))
                     else:
                         if maxTTL == 0 and excpectedTTL == 0:
-                            print("TTL for the {} DNS entry at {} is {}".format(domain, hostname, ttl))
+                            print("TTL for the {} DNS entry at {} is {}".format(domain, hostname, r.ttl))
                         else:
-                            if ttl == 0:
+                            if r.ttl == 0:
                                 print("⚠️ Warning: TTL for {} at {} is unknown".format(domain, hostname))
-                            elif ttl > maxTTL and maxTTL > 0:
-                                print("⚠️ Warning: TTL for {} at {} is {} instead of {}".format(domain, hostname, ttl, maxTTL))
-                            elif ttl == expectedTTL:
+                            elif r.ttl > maxTTL and maxTTL > 0:
+                                print("⚠️ Warning: TTL for {} at {} is {} instead of {}".format(domain, hostname, r.ttl, maxTTL))
+                            elif r.ttl == expectedTTL:
                                 if warningsOnly == False:
-                                    print("TTL for {} at {} is {}".format(domain, hostname, ttl))
-                            elif ttl != excpectedTTL and excpectedTTL != 0:
-                                print("⚠️ Warning: TTL for {} at {} is {} instead of {}".format(domain, hostname, ttl, expectedTTL))
+                                    print("TTL for {} at {} is {}".format(domain, hostname, r.ttl))
+                            elif r.ttl != excpectedTTL and excpectedTTL != 0:
+                                print("⚠️ Warning: TTL for {} at {} is {} instead of {}".format(domain, hostname, r.ttl, expectedTTL))
         except Exception as e:
             time.sleep(2)
             if verbose:
@@ -84,7 +100,7 @@ def checkDomain(domain, recordType, warningsOnly, maxTTL, excpectedTTL, verbose)
                 if verbose:
                     print("DNS checks for {} are still failing after {} attempts. Giving up.".format(domain, attemptCount))
                     print(e)
-    sem.release()
+    return results
 
 a = common.parseArgs(sys.argv)
 verbose = a["v"]
@@ -120,14 +136,18 @@ recordType = "CNAME"
 if "type" in a.keys():
     recordType = a["type"]
 
-threadList = []
+outputFileName = ""
+if "o" in a.keys():
+    outputFileName = a["o"]
+
+csvString = "Name,Value,Type,TTL,DNS Server"
 for domain in listofDomains:
     if len(listofDomains) < 10:
         print("Cheking {}".format(domain))
-    t = threading.Thread(target=checkDomain, args=(domain,recordType,warningsOnly,maxTTL,expectedTTL,verbose,))
-    t.start()
-    threadList.append(t)
+    results = checkDomain(domain,recordType,warningsOnly,maxTTL,expectedTTL,verbose)
+    for r in results:
+        csvString = "{cont}\n{name},{value},{type},{ttl},{dnsServer}".format(cont=csvString, name=r.name, value=r.value, type=r.recordType, ttl=r.ttl, dnsServer=r.server)
     time.sleep(2)
-for t in threadList:
-    t.join()
+if outputFileName != "":
+    common.stringToFile(outputFileName, csvString)
 print("\nDone")
