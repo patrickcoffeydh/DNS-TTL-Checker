@@ -12,7 +12,9 @@ class DNSAnswer:
     name = ""
     value = ""
 
-def authoritativeServers(domain, resolver) -> list:
+def authoritativeServers(domain) -> list:
+    resolver = dns.resolver.Resolver(configure=True)       
+    resolver.lifetime = 5
     authoritativeServerList = []
     domainList = domain.split(".")
     rootDomain = ".".join(domainList[-2:])
@@ -24,7 +26,9 @@ def authoritativeServers(domain, resolver) -> list:
             authoritativeServerList.append(authoritativeDNSServer)
     return authoritativeServerList
 
-def authoritativeServerListIP(domains, resolver) -> dict:
+def authoritativeServerListIP(domains) -> dict:
+    resolver = dns.resolver.Resolver(configure=True)
+    resolver.lifetime = 5
     ips = {}
     for domain in domains:
         authoritativeDNSIPList = []
@@ -36,7 +40,10 @@ def authoritativeServerListIP(domains, resolver) -> dict:
             ips[domain] = authoritativeDNSIPList
     return ips
 
-def domainTTL(domain, resolver, type, verbose=False) -> DNSAnswer:
+def domainTTL(domain, resolverIP, type, verbose=False) -> DNSAnswer:
+    resolver = dns.resolver.Resolver(configure=False)
+    resolver.lifetime = 5
+    resolver.nameservers = [resolverIP]
     answer = resolver.resolve(domain, type, )
     defaultR = DNSAnswer()
     defaultR.name = domain
@@ -65,15 +72,12 @@ def checkDomain(domain, recordType, warningsOnly, maxTTL, excpectedTTL, verbose)
     while retry:
         attemptCount = attemptCount + 1
         try:
-            customResolver = dns.resolver.Resolver(configure=False)
-            standardResolver = dns.resolver.Resolver(configure=True)
-            authoritativeDNSList = authoritativeServers(domain, resolver=standardResolver)
-            authoritativeDNSIPs = authoritativeServerListIP(authoritativeDNSList, resolver=standardResolver)
+            authoritativeDNSList = authoritativeServers(domain)
+            authoritativeDNSIPs = authoritativeServerListIP(authoritativeDNSList)
             for hostname in authoritativeDNSIPs.keys():
                 ips = authoritativeDNSIPs[hostname]
                 for ip in ips:
-                    customResolver.nameservers = [ip]
-                    r = domainTTL(domain=domain, resolver=customResolver, type=recordType)
+                    r = domainTTL(domain=domain, resolverIP=ip, type=recordType)
                     r.server = hostname
                     results.append(r)
                     if r.ttl == -1:
